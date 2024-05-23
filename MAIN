@@ -1,0 +1,539 @@
+//*******************************************************************************************************************************************
+// Universidad del Valle de Guatemala
+// IE2023 Programación de Microcontroladores
+// main.c
+// Proyecto: PROYECTO2
+// Hardware: ATMEGA328P
+// Created: 5/5/2024
+// Author : Juan Luis Monzón
+//********************************************************************************************************************************************
+
+/*******************************************************************************************************************************************************************
+ACLARACIÓN: LOS BLOQUES COMENTADOS SON EL INTENTO DE PROGRA SOBRE EL ADAFRUIT Y LA COMUNICACIÓN UART LOS CUALES NO SIRVIERON A LA HORA DE LA PRESENTACIÓN
+*******************************************************************************************************************************************************************/
+
+//********************************************************************************************************************************************
+//LIBRERIAS
+//********************************************************************************************************************************************
+
+# define F_CPU 16000000
+#include <avr/io.h>
+#include <avr/interrupt.h>
+#include <stdint.h>
+#include <util/delay.h>
+#include <avr/eeprom.h>
+#include "ADC/ADC.h"
+#include "PWM0/PWM0.h"
+#include "PWM1/PWM1.h"
+
+//********************************************************************************************************************************************
+//V. G.
+//********************************************************************************************************************************************
+
+uint8_t POT = 0;																					//VALORES DE LOS POTENCIOMETROS
+uint8_t POT1 = 0;																					//POTENCIOMETRO 1
+uint8_t POT2 = 0;																					//POTENCIOMETRO 2
+uint8_t POT3 = 0;																					//POTENCIOMETRO 3
+uint8_t POT4 = 0;																					//POTENCIOMETRO 4
+uint8_t MODO = 0;
+uint8_t* address = 0;
+uint8_t A = 0;																						//VALOR DE LA EEPROM 1
+uint8_t B = 0;																						//VALOR DE LA EEPROM 2
+uint8_t C = 0;																						//VALOR DE LA EEPROM 3
+uint8_t D = 0;																						//VALOR DE LA EEPROM 4
+
+//*****************************************FRACASO ADAFRUIT*********************************************************************************
+/*uint8_t RECORRIDO = 0;
+uint8_t Servo = 0;
+uint8_t SEN = 0;
+uint8_t DEC = 0;
+uint8_t UNI = 0;
+uint8_t Total = 0;*/
+
+
+void setup(void);																					//FUNCION DEL SETUP
+void pinchange(void);																				//FUNCION DEL CAMBIO DE PIN
+//void initUART(void);																			
+//uint8_t Traductor(uint8_t valor);
+
+
+//********************************************************************************************************************************************
+//MAIN
+//********************************************************************************************************************************************
+
+int main(void)
+{	
+	setup();
+    while (1) 
+    {
+		switch (MODO){
+			case 0:																					//MODO MANUAL Y ESCRIBIR EN LA EEPROM
+			
+			ADCSRA |= (1 << ADSC);																	//ACTIVAR LA CONVERSIÓN DEL ADC
+			
+//SERVO MANUAL//*****************************************************************************************************************************************
+			updateDutyA0((POT1/9) + 12);															//ACTUALIZAR EL VALOR DEL POTENCIOMETRO 1 EN EL VALOR DEL SERVO 1
+			updateDutyA1((POT2/9) + 12);															//ACTUALIZAR EL VALOR DEL POTENCIOMETRO 2 EN EL VALOR DEL SERVO 2
+			updateDutyB0((POT3/9) + 12);															//ACTUALIZAR EL VALOR DEL POTENCIOMETRO 3 EN EL VALOR DEL SERVO 3
+			updateDutyB1((POT4/9) + 12);															//ACTUALIZAR EL VALOR DEL POTENCIOMETRO 4 EN EL VALOR DEL SERVO 4
+				
+			_delay_ms(10);
+			break;
+			
+			case 1:																					//MODO LEER EEPROM
+
+//SERVO EEPROM//*****************************************************************************************************************************************
+			//180 GRADOS
+			updateDutyA0((A/9) + 12);																//ACTUALIZAR EL VALOR GUARDADO DN LA EEPROM EN EL SERVO 1 
+			//20 GRADOS
+			updateDutyA1((B/120) + 12);																//ACTUALIZAR EL VALOR GUARDADO DN LA EEPROM EN EL SERVO 2
+			//50 GRADOS		
+			updateDutyB0((C/72) + 12);																//ACTUALIZAR EL VALOR GUARDADO DN LA EEPROM EN EL SERVO 3
+			//180 GRADOS
+			updateDutyB1((D/9) + 12);																//ACTUALIZAR EL VALOR GUARDADO DN LA EEPROM EN EL SERVO 4
+			
+			_delay_ms(10);
+			break;
+			
+			case 2:																					//RECIBIR DE ADAFRUIT
+//ADAFRUIT
+//***************************************************************************************************************************************
+			updateDutyA0((A/9) + 12);																//ACTUALIZAR EL VALOR GUARDADO DN LA EEPROM EN EL SERVO 1
+			updateDutyA1((B/120) + 12);																//ACTUALIZAR EL VALOR GUARDADO DN LA EEPROM EN EL SERVO 2
+			updateDutyB0((C/72) + 12);																//ACTUALIZAR EL VALOR GUARDADO DN LA EEPROM EN EL SERVO 3
+			updateDutyB1((D/9) + 12);																//ACTUALIZAR EL VALOR GUARDADO DN LA EEPROM EN EL SERVO 4
+			
+			_delay_ms(10);
+//***************************************************************************************************************************************
+			 
+			break;
+			
+			default:
+				break;
+		}
+    }
+}
+
+//********************************************************************************************************************************************
+//FUNCIONES
+//********************************************************************************************************************************************
+void setup (void){
+		CLKPR |= (1 << CLKPCE);
+		CLKPR |= (1 << CLKPS0);																			//8MHz
+		
+		DIDR0 |= (1 << ADC5D) | (1 << ADC4D);															//APAGAR LA ENTRADA DIGITAL DE PC5 Y PC4
+		
+		DDRC &= ~((1 << DDC0) | (1 << DDC1) | (1 << DDC2) | (1 << DDC3));								//BOTONES
+		PORTC |= (1 << PORTC0) | (1 << PORTC1) | (1 << PORTC2) | (1 << PORTC3);							//PULLUPS
+		
+		DDRB &= ~(1 << DDB4);																			//BOTON DE MODO
+		PORTB |= (1 << PORTB4);																			//PULLUP DE BOTON
+		
+		DDRD |= (1 << DDD2) | (1 << DDD3);																//LED 1 Y 2
+		
+		TCCR0A = 0;
+		TCCR0B = 0;
+		
+		TCCR1A = 0;
+		TCCR1B = 0;
+		
+		setPWM0fastA(0, _FF0, 1024);																	//SETEAR EL PWM0 A EN FAST
+		
+		setPWM0fastB(0, _FF0, 1024);																	//SETEAR EL PWM0 B EN FAST
+		
+		setPWM1fastA(0, _8bits, 1024);																	//SETEAR EL PWM1 A EN FAST
+		
+		setPWM1fastB(0, _8bits, 1024);																	//SETEAR EL ´WM1 B EN FAST
+		
+		initUART();
+		
+		setADC(externo, izquierda, 4);																	//SETEAR EL ADC
+		
+		controlADC(1, 0, 1, 128);																		//SETEAR LOS REGISTROS DE CONTROL DEL ADC
+		
+		pinchange();
+		
+		PORTD &= ~(1 << PORTD3);
+		PORTD |= (1 << PORTD2);
+		
+		sei();																							//ACTIVAR INTERRUPCIONES GLOBALES
+}
+void pinchange (void){
+	PCICR |= (1 << PCIE1) | (1 << PCIE0);
+	
+	PCMSK1 |= (1 << PCINT8) | (1 << PCINT9) | (1 << PCINT10) | (1 << PCINT11);							//MASCARAS DE LOS BOTONES
+	PCMSK0 |= (1 << PCINT4);																			//MASCARAS DEL BOTON MODO
+}
+
+/*void initUART(){
+	DDRD |= (1 << DDD1);
+	DDRD &= ~(1 << DDD0);
+	
+	UCSR0A |= (1 << U2X0);
+
+	UCSR0B |= (1 << RXCIE0) | (1 << RXEN0) | (1 << TXEN0);
+
+	UCSR0C |= (1 << UCSZ01) | (1 << UCSZ00);
+	
+	UBRR0 = 207;
+}*/
+
+/*uint8_t Traductor(uint8_t valor){
+	uint8_t exe = 0;
+	switch (valor)
+	{
+		case 48:
+		exe=0;
+		break;
+		case 49:
+		exe=1;
+		break;
+		case 50:
+		exe=2;
+		break;
+		case 51:
+		exe=3;
+		break;
+		case 52:
+		exe=4;
+		break;
+		case 53:
+		exe=5;
+		break;
+		case 54:
+		exe=6;
+		break;
+		case 55:
+		exe=7;
+		break;
+		case 56:
+		exe=8;
+		break;
+		case 57:
+		exe=9;
+		break;
+		default:
+		break;
+	}
+	return exe;*/
+}
+//********************************************************************************************************************************************
+//INTERRUPCIONES
+//********************************************************************************************************************************************
+ISR(ADC_vect){
+	POT = (ADMUX & 0x0F);																				//LEER QUE POTENCIOMETRO ACTIVO LA INTERRUPCIÓN
+	
+	if (POT == 4){
+		POT1 = ADCH;																					//LEER EL POTENCIOMETRO ACTIVADO
+		setADC(externo, izquierda, 5);																	//SETEAR SIGUIENTE POTENCIOMETRO
+	}
+	else if (POT == 5){
+		POT2 = ADCH;
+		setADC(externo, izquierda, 6);
+	}
+	else if (POT == 6){
+		POT3 = ADCH;
+		setADC(externo, izquierda, 7);
+	}
+	else {
+		POT4 = ADCH;
+		setADC(externo, izquierda, 4);
+	}
+	
+	ADCSRA |= (1 << ADIF);																				//APAGAR BANDERA ADC
+}
+ISR(PCINT0_vect){
+	uint8_t bot_modo = PINB & (1 << PINB4);																//LEER SI SE PRESIONO EL BOTON DE MODO
+	
+	if (bot_modo == 0){
+		if (MODO <2){
+			MODO++;
+		}
+		else{
+			MODO = 0;
+		}
+	}
+	
+	switch(MODO){
+		case 0:
+		PORTD &= ~(1 << PORTD3);
+		PORTD |= (1 << PORTD2);
+		break;
+		case 1:
+		PORTD &= ~(1 << PORTD2);
+		PORTD |= (1 << PORTD3);
+		break;
+		case 2:
+		PORTD |= (1 << PORTD2);
+		break;
+		default:
+		break;
+	}
+	PCIFR |= (1 << PCIF0);																				//APAGAR BANDERA PINCHANGE
+}
+ISR(PCINT1_vect){																						//LEER SI SE PRESIONO UN BOTON DE LOS DE GURADADO EN LA EEPROM
+//**************************************************ASIGNAR LOS VALORES DE LOS BOTONES A SUS RESPECTIVAS VARIABLES*****************************************************
+	uint8_t BOT_1 = PINC & (1 << PINC0);				
+	uint8_t BOT_2 = PINC & (1 << PINC1);
+	uint8_t BOT_3 = PINC & (1 << PINC2);
+	uint8_t BOT_4 = PINC & (1 << PINC3);
+	uint8_t c = 0;
+	
+	cli();
+	
+	switch (MODO){																						//VER SI SE ESCRIBE O SE LEE LOS VALORES DE LA EEPROM
+		case 0:																							//ESCRIBIR EN LA EEPROM LOS VALORES DE LAS POSICIONES
+		
+		if (BOT_1 == 0){
+			address = 0;
+			eeprom_write_byte(address, POT1);
+			address++;
+			eeprom_write_byte(address, POT2);
+			address++;
+			eeprom_write_byte(address, POT3);
+			address++;
+			eeprom_write_byte(address, POT4);
+		}
+		else if (BOT_2 == 0){
+		for (c = 0; c < 4; c++){
+			address++;
+		}
+			eeprom_write_byte(address, POT1);
+			address++;
+			eeprom_write_byte(address, POT2);
+			address++;
+			eeprom_write_byte(address, POT3);
+			address++;
+			eeprom_write_byte(address, POT4);
+		}
+		else if (BOT_3 == 0){
+		for (c = 0; c < 8; c++){
+			address++;
+		}
+			eeprom_write_byte(address, POT1);
+			address++;
+			eeprom_write_byte(address, POT2);
+			address++;
+			eeprom_write_byte(address, POT3);
+			address++;
+			eeprom_write_byte(address, POT4);
+		}
+		else if (BOT_4 == 0){
+			for (c = 0; c < 12; c++){
+				address++;
+			}
+			eeprom_write_byte(address, POT1);
+			address++;
+			eeprom_write_byte(address, POT2);
+			address++;
+			eeprom_write_byte(address, POT3);
+			address++;
+			eeprom_write_byte(address, POT4);
+		}
+		address = 0;
+		break;
+		
+		case 1:																							//LEER LOS VALORES DE LA EEPROM
+		
+		if (BOT_1 == 0){
+			address = 0;
+			A = eeprom_read_byte(address);
+			address++;
+			B = eeprom_read_byte(address);
+			address++;
+			C = eeprom_read_byte(address);
+			address++;
+			D = eeprom_read_byte(address);
+		}
+		else if (BOT_2 == 0){
+			for (c = 0; c < 4; c++){
+				address++;
+			}
+			A = eeprom_read_byte(address);
+			address++;
+			B = eeprom_read_byte(address);
+			address++;
+			C = eeprom_read_byte(address);
+			address++;
+			D = eeprom_read_byte(address);
+		}
+		else if (BOT_3 == 0){
+			for (c = 0; c < 8; c++){
+				address++;
+			}
+			A = eeprom_read_byte(address);
+			address++;
+			B = eeprom_read_byte(address);
+			address++;
+			C = eeprom_read_byte(address);
+			address++;
+			D = eeprom_read_byte(address);
+		}
+		else if (BOT_4 == 0){
+			for (c = 0; c < 12; c++){
+				address++;
+			}
+			A = eeprom_read_byte(address);
+			address++;
+			B = eeprom_read_byte(address);
+			address++;
+			C = eeprom_read_byte(address);
+			address++;
+			D = eeprom_read_byte(address);
+		}
+		address = 0;
+		break;
+		
+		case 2:
+		break;
+		
+		default:
+			break;
+	}
+	sei();
+	PCIFR |= (1<<PCIF1);
+}
+
+/*ISR(USART_RX_vect){
+	uint8_t modoUART = 0;
+	uint8_t recibido = UDR0;
+	uint8_t i = 0;
+
+	if (recibido == 69){
+		modoUART = 0;
+		PORTD |= (1 << PORTD2) | (1 << PORTD3);
+	}
+	else if (recibido == 76){
+		modoUART = 1;
+		PORTD &= ~((1 << PORTD2) | (1 << PORTD3));
+	}
+	if (RECORRIDO == 0){
+		if (recibido == 83){
+			RECORRIDO = 1;
+		}
+		else if (recibido!=83){
+			RECORRIDO=0;
+		}
+	}
+	if (RECORRIDO == 1){
+		switch (recibido){
+			case 49:
+			Servo = 1;
+		
+			break;
+		
+			case 50:
+			Servo = 2;
+		
+			break;
+		
+			case 51:
+			Servo = 3;
+		
+			break;
+		
+			case 52:
+			Servo = 4;
+			break;
+			
+			default:
+			break;
+	}
+	RECORRIDO = 2;
+
+	}
+	if (RECORRIDO == 2){
+		SEN = Traductor(recibido);
+		RECORRIDO = 3;
+	}
+	if (RECORRIDO == 3){
+		DEC = Traductor(recibido);
+		RECORRIDO = 4;
+	}
+	
+	if (RECORRIDO == 4){
+		UNI = Traductor(recibido);
+		Total = SEN*100 + DEC*10 + UNI;
+		
+		RECORRIDO = 0;
+	
+	switch (Servo){
+		case 1:
+		A = Total;
+		break;
+		
+		case 2:
+		B = Total;
+		break;
+		
+		case 3:
+		C = Total;
+		break;
+		
+		case 4:
+		D = Total;
+		break;
+	
+	}
+	}
+	
+	switch (modoUART){
+		case 0:
+			break;
+		
+		case 1:
+			if (recibido == 49){
+				address = 0;
+				A = eeprom_read_byte(address);
+				address++;
+				B = eeprom_read_byte(address);
+				address++;
+				C = eeprom_read_byte(address);
+				address++;
+				D = eeprom_read_byte(address);
+			}
+			else if (recibido == 50){
+				for (i = 0; i < 4; i++){
+					address++;
+				}
+				A = eeprom_read_byte(address);
+				address++;
+				B = eeprom_read_byte(address);
+				address++;
+				C = eeprom_read_byte(address);
+				address++;
+				D = eeprom_read_byte(address);
+			}
+			else if (recibido == 51){
+				for (i = 0; i < 8; i++){
+					address++;
+				}
+				A = eeprom_read_byte(address);
+				address++;
+				B = eeprom_read_byte(address);
+				address++;
+				C = eeprom_read_byte(address);
+				address++;
+				D = eeprom_read_byte(address);
+			}
+			else if (recibido == 52){
+				for (i = 0; i < 12; i++){
+					address++;
+				}
+				A = eeprom_read_byte(address);
+				address++;
+				B = eeprom_read_byte(address);
+				address++;
+				C = eeprom_read_byte(address);
+				address++;
+				D = eeprom_read_byte(address);
+			}
+			address = 0;
+			break;
+			
+			
+		default:
+			break;
+	}
+
+}*/
